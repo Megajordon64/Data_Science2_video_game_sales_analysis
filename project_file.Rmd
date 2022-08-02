@@ -1,0 +1,217 @@
+---
+title: "Project 1: Regression"
+author: "Jordon Zeigler"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Getting started
+
+Here are the steps for getting started:
+
+- Start with the assignment link that creates a repo on GitHub with starter documents. I have sent this to you through email.
+- Clone this repo in RStudio
+- Make any changes needed as outlined by the tasks you need to complete for the assignment
+- Periodically commit changes (the more often the better, for example, once per each new task)
+    + Remember, git will yell at you when you try to commit before running the following lines in the terminal
+        - `git config --global user.name "Your Name Here"`
+        - `git config --global user.email "Your Email Here"`
+- Push all your changes back to your GitHub repo
+
+and voila, you're done! Once you push your changes back you do not need to do anything else to "submit" your work. And you can of course push multiple times throughout the assignment. At the time of the deadline I will take whatever is in your repo and consider it your final submission, and grade the state of your work at that time (which means even if you made mistakes before then, you wouldn't be penalized for them as long as the final state of your work is correct).
+
+## Assignment Description
+
+In this project you are going to use the skills that you've learned about regression on a dataset of your own. You may choose any dataset that you wish as long as it is not one that we've already discussed in the course. You may want to consult me about your choice of dataset, just to make sure it is suitable. 
+
+After making a suitable dataset choice, you need to complete the following steps: 
+
+* Narrative: You need to formulate a question in which you can address using your chosen techniques. This is the overall goal of your analysis. 
+* You need to perform proper pre-processing and cleaning of the data before your analysis begins. Depending on your data, this step may be fairly short or quite lengthy.
+* You need to have a substantial exploratory data analysis (EDA) section. This section should include summaries, graphs (univariate, bivariate, and possibly multivariate), and other techniques from DS 1 to describe your data. You should also investigate possible interactions between variables. Your EDA should show a progression of understanding about the data and your research question.
+* You need to choose at least two regression techniques (most likely a multiple linear regression model and a penalized regression method) to use in your analysis. You should explain your modeling choices and how they were informed by your EDA. 
+* You need to address the assumptions of each method with graphical and/or numeric evidence.
+* You need to use cross-validation or a related method to compare the two or more methods.
+* You need to come to your final answer using an iterative process that you show throughout your project.
+* You need to discuss the shortcomings of your modeling approach. Also, if appropriate, you discuss improvements that could be made.
+* You need to discuss how the model approach/output works toward answering the question. 
+* You need to discuss your major takeaways from the project. This part is meant to be a reflection on what you learned about the data and your increase in knowledge about data science during the process of the project. 
+
+
+## Place Work Below
+
+```{r}
+library("tidyverse");theme_set(theme_bw())
+library("tidymodels")
+library("janitor")
+library("knitr")
+library("caret")
+library("leaps")
+library("olsrr")
+library("glmnet")
+library("fastDummies")
+library(Metrics)
+library(MASS)
+
+Game_Sales <- read_csv("Video_Games_Sales_as_at_22_Dec_2016.csv")
+```
+
+The main question for this project will be what variables seem to correlate the most with the number of copies that a video game has sold globally, excluding a game's name or title and of course the NA, EU, JP and Other sales as they all effectively add up to the global sales amount which will be considered the main response variable of this analysis. User_Count and Critic_Count will also not be considered as possible predictors for this analysis, the User_Score and Critic_Score will be considered however.
+
+Exploratory Data Analysis section
+```{r}
+summary(Game_Sales)
+
+# produces box plot involving the 10 most common platforms that games were released on and global sales numbers for each game in relation to the platform they were released on
+platform_graph_variables <- Game_Sales %>% group_by(Platform) %>% filter(n() > 5)%>%  summarize(Count = n()) %>% arrange(desc(Count)) %>% head(10)
+
+platform_graph_base <- Game_Sales %>% 
+    filter(Platform %in% platform_graph_variables$Platform)
+
+ggplot(platform_graph_base, aes(x = Platform, y = Global_Sales)) +
+    geom_boxplot() + coord_cartesian(ylim = c(0, 1))
+
+# will produce a boxplot involving the genres (categories) of each game and the global sales number for each game in relation to which genre they were labelled
+genre_graph_variables <- Game_Sales %>% group_by(Genre) %>% filter(n() > 5)%>%  summarize(Count = n()) %>% arrange(desc(Count)) %>% head(10)
+
+genre_graph_base <- Game_Sales %>% 
+    filter(Genre %in% genre_graph_variables$Genre)
+
+ggplot(genre_graph_base, aes(x = Genre, y = Global_Sales)) +
+    geom_boxplot() + coord_cartesian(ylim = c(0, 1))
+
+# will produce a boxplot involving the developers of each game and the global sales number for each game in relation to who developed them
+developer_graph_variables <- Game_Sales %>% group_by(Developer) %>% filter(n() > 5)%>%  summarize(Count = n()) %>% arrange(desc(Count)) %>% head(10)
+
+developer_graph_base <- Game_Sales %>% 
+    filter(Developer %in% developer_graph_variables$Developer)
+
+ggplot(developer_graph_base, aes(x = Developer, y = Global_Sales)) +
+    geom_boxplot() + scale_x_discrete(guide = guide_axis(n.dodge = 3)) + coord_cartesian(ylim = c(0, 2))
+
+# will produce a boxplot involving the publishers of each game and the global sales number for each game in relation to who published them
+publisher_graph_variables <- Game_Sales %>% group_by(Publisher) %>% filter(n() > 5)%>%  summarize(Count = n()) %>% arrange(desc(Count)) %>% head(10)
+
+publisher_graph_base <- Game_Sales %>% 
+    filter(Publisher %in% publisher_graph_variables$Publisher)
+
+ggplot(publisher_graph_base, aes(x = Publisher, y = Global_Sales)) +
+    geom_boxplot() + scale_x_discrete(guide = guide_axis(n.dodge = 4)) + coord_cartesian(ylim = c(0, 5))
+
+# will produce a box plot involving the relation between a game's age rating and it's global sales
+rating_graph_variables <- Game_Sales %>% group_by(Rating) %>% filter(n() > 5)%>%  summarize(Count = n()) %>% arrange(desc(Count)) %>% head(10)
+
+rating_graph_base <- Game_Sales %>% 
+    filter(Rating %in% rating_graph_variables$Rating)
+
+ggplot(rating_graph_base, aes(x = Rating, y = Global_Sales)) +
+    geom_boxplot() + coord_cartesian(ylim = c(0, 1))
+
+# will produce a box plot involving the relation between a game's year of release and it's global sales
+year_graph_variables <- Game_Sales %>% group_by(Year_of_Release) %>% filter(n() > 5)%>%  summarize(Count = n()) %>% arrange(desc(Count)) %>% head(10)
+
+year_graph_base <- Game_Sales %>% 
+    filter(Year_of_Release %in% year_graph_variables$Year_of_Release)
+
+ggplot(year_graph_base, aes(x = Year_of_Release, y = Global_Sales)) +
+    geom_boxplot() + coord_cartesian(ylim = c(0, 1))
+
+# plot relating user scores of games to their global sales
+ggplot(Game_Sales, aes(x = User_Score, y = Global_Sales)) + geom_point()
+
+# plot relating critic scores of games to their global sales
+ggplot(Game_Sales, aes(x = Critic_Score, y = Global_Sales)) + geom_point()
+
+```
+The graphs produced in this section have shown a few trends for each of the categorical variables and their correlation to the global sales variable. For almost all of the boxplots involving the categorical variables have several outlier values. The platform graph indicates that the ps2, ps, ps3 and xbox 360 have a very wide interquarile range (wide variety of values found in the middle 50% of values) compared to the other platforms, especially the PC. The genre graph indicates that each of the 10 most common genres have fairly similar interquartile ranges, except for the adventure and miscellaneous genre. The adventure genre especially features many of its game's sales ranging between 0.02 million and 0.12 million, although there are many outlier values present. The developer graph indicates that Ubisoft Montreal and EA sports have the widest interquartile range and have the highest possible values for said interquartile range as well. The publisher graph indicates that out of the 10 most prominent publishers, Nintendo has the highest interquartile range by a wide amount and also have a larger third quartile, meaning that the middle 50% of the values have a wide range of values and tend to appear on the high end. The rating graph indicated that the mature rating category had the largest interquartile range with a massive third quartile implying that the sales of most mature rated games are generally higher than other rated games. The year of release for a game doesn't appear to have any significant differences, at least amongst the top 10 years chosen due to their presence in the data. As for the numerical variables, critic score and user score, both have mildly similar point distributions with both having a very mild positive correlation with the score variables, although not by much and there are quite a few outliers present.
+
+Linear Regression Model
+the platform, genre, developer, publisher, user score, rating and critic score variables will be used as predictors with global sales being the response variable. The year of release variable will be excluded as it has been shown to not be very relevant as seen from the EDA section. The developer and publisher variables will likely be excluded since while the EDA has shown that while these variables appear to have some influence on the range of values, trying to incorporate either of them into the model and attempting to perform subset regression with either of them is too resource intensive for rstudio cloud.
+```{r}
+split_data <- split(Game_Sales, sample(1:nrow(Game_Sales) > round(nrow(Game_Sales) * .1)))
+Training_Game_Sales <- split_data$`TRUE`
+Test_Game_Sales <- split_data$`FALSE`
+```
+
+```{r}
+sales_predictor_model <- lm(Global_Sales ~ Platform + Rating + Genre + User_Score + Critic_Score, data = Training_Game_Sales)
+summary(sales_predictor_model)
+par(mfrow =c(2,2))
+plot(sales_predictor_model)
+```
+
+```{r}
+best_predictor_linear <- ols_step_best_subset(sales_predictor_model)
+best_predictor_linear
+final_sales_predictor_model_lin <- lm(Global_Sales ~ Critic_Score, data = na.omit(Training_Game_Sales))
+par(mfrow =c(2,2))
+plot(final_sales_predictor_model_lin)
+Test_Game_Sales <- na.omit(Test_Game_Sales)
+
+
+rmse(Test_Game_Sales$Global_Sales, predict(final_sales_predictor_model_lin, Test_Game_Sales))
+
+```
+This section has determined that the best variable or at least the variable with the most influence on the global sales variable is the critic score variable and a new model has been formed using only that as a predictor for comparisons to the penalized regression later. concerning the assumptions of linear regression (focusing only on the model that only uses the critic score as a predictor) the model satisfies the assumption of linearity as the residuals vs fitted graph indicates a graph that is fairly close to 0 consistently. The assumption of homogenity of variance isn't valid as the scale location graph doesn't feature very evenly distributed points. The normality of Residuals assumption isn't valid as the Normal Q-Q plot doesn't feature a straight line for its points. Finally the assumption of high leverage is also not valid as a fair number points exceed a leverage value 0.002 implying that those points have too much influence on the model. Overall this model is not necessarily the most suitable for this dataset. 
+
+Penalized Regression Model
+will include the same predictors that were originally chosen for the linear regression model, platform, genre, rating, critic score and user score 
+```{r}
+
+Training_Game_Sales <- na.omit(Training_Game_Sales)
+Game_Sales_recipe <- recipe(Global_Sales ~ User_Score + Critic_Score + Platform + Genre + Rating, data = Training_Game_Sales) %>% step_dummy(c(Platform, Genre, Rating), one_hot = TRUE)
+Game_Sales_recipe <- Game_Sales_recipe %>% step_center(all_numeric_predictors()) %>% step_scale(all_numeric_predictors())
+
+folds <- vfold_cv(Training_Game_Sales, v = 10)
+
+Game_Sales_regression_model <- linear_reg(penalty = tune(), mixture = 1) %>% set_engine("glmnet")
+
+Game_Sales_workflow <- workflow() %>% add_recipe(Game_Sales_recipe) %>% add_model(Game_Sales_regression_model)
+
+tuning_grid <- grid_regular(penalty(), levels = 50)
+
+tuning_grid <- tune_grid(Game_Sales_workflow, resamples = folds, grid = tuning_grid)
+
+tuning_grid %>% collect_metrics() %>% filter(.metric == "rmse") %>% arrange(mean)
+
+Game_Sales_regression_model2 <- linear_reg(penalty = 0.001389, mixture = 1) %>% set_engine("glmnet")
+
+Game_Sales_workflow2 <- workflow() %>% add_recipe(Game_Sales_recipe) %>% add_model(Game_Sales_regression_model2)
+
+fit_Game_Sales_workflow <- fit(Game_Sales_workflow2, Training_Game_Sales)
+
+tuning_grid %>%
+    collect_metrics() %>%
+    ggplot(aes(penalty, mean, color = .metric)) +
+    geom_errorbar(aes(
+        ymin = mean - std_err,
+        ymax = mean + std_err
+    ),
+    alpha = 0.5
+    ) +
+    geom_line(size = 1.5) +
+    facet_wrap(~.metric, scales = "free", nrow = 2) +
+    scale_x_log10() +
+    theme(legend.position = "none")
+
+
+penalized_predictions <- predict(fit_Game_Sales_workflow, Test_Game_Sales)
+penalized_predictions <- na.omit(penalized_predictions)
+
+rmse(Test_Game_Sales$Global_Sales, penalized_predictions$.pred)
+
+```
+based on the results of the extract_parsnip function it would appear that out of the variables present, the critic score appears to still have the highest influence on the global sales numbers for each game, with each other variable having less than half the amount of influence that the critic score variable had.
+
+Conclusion:
+using the method of cross validation it has been shown that the penalized regression model that incorporates the genre, rating, platform, user score and critic score variables as predictors is mildly better than the linear regression model which only uses the critic score variable as a predictor due to the results of the best subset selection. This has been determined based off the root mean squared estimate that each model provided when paired with the test dataset, The linear regression model will consistently have a higher rmse value than the penalized regression model. (the actual rsme value between both can vary whenever the entire set of r code is run, likely due to the training and test sets being chosen at random, but everytime the entire set of code has been run, the linear regression model always has a slightly larger rmse value). The other main question of this project of determining which variable is most important in predicting the global sales amount for any given game and both models have indicated that the critic score is the most important, the penalized regression model especially so. 
+
+In terms of shortcomings the linear regression model was found to be not fully suitable for the dataset and predictors chosen, however I was unsure of what other modelling method to use for this project. Another major shortcoming of this project was the inability to use the developer and publisher variables in either of the models to see how much of an impact either of them had on the global sales amount due to their inclusion causing rstudio cloud to crash, likely due due to the large variety of developers and publishers found.
+
+The approach I took for the linear regression section was to find the best combination of variables for predicting the global sales amount using the ols step best subset function, which yielded the result of the critic score being the most important. I decided to form the linear regression model using only the critic score variable to compare it against the penalized regression form while it still used all of the previous variables being considered. The next step involved forming a penalized regression model while determining the best possible penalty value for it and then looking at the results of calling extract parsnip on that model/workflow to see which variable led to the highest or most significant estimate value and once again the critic score was shown to be the most significant by a very large amount, although the other variables were shown to have some mild effect on the outcome. The final part of this project was comparing the rmse values of each model's attempts to predict global sales values against the actual test portion of the dataset. This was done to determine which of the two models was more accurate overall, the model only focusing on the critic score as a predictor or the model involving all of the initial predictors (albeit with a penalty). the results showed that the latter was more accurate indicating that while indeed the critic score is the most important variable in predicting global sales numbers, the combination of all of them as predictors can yield slightly more accurate results.
+
+Analyzing the data has shown me that a game's critic rating is alot more indicative of a game's success than I initially thought, truthfully I didn't think it or the user score variables would be very relevant overall. This project has helped me review the main aspects of linear modelling and variable selection, although I do think that there is more stuff concerning penalized regression that I need to look over once more. This project was also a good opportunity to go over the basics of model comparison using cross validation. I would say another important lesson I learned for future projects in r is to choose datasets that don't contain so many varied categorical variables, I'm referring mainly to the developer and publisher variables, as I was legitimately expecting those two to have significant results, however caveats had to be made due to using the rstudio cloud environment.
+
